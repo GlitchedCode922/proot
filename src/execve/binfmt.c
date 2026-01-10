@@ -14,6 +14,7 @@
 #include <talloc.h>
 #include <errno.h>
 #include <unistd.h>
+#include <ctype.h>
 
 BinfmtRule* rules = NULL;
 int rules_number = 0;
@@ -31,8 +32,15 @@ int register_binfmt(const BinfmtRule* rule) {
 		}
 		rules = new_rules;
 	}
+	BinfmtRule r = *rule;
+	// Ensure mask is applied to magic
+	if (r.type == 'M') {
+		for (size_t i = 0; i < PATH_MAX; i++) {
+			r.magic[i] &= r.mask[i];
+		}
+	}
 	// Add the new rule to the array
-	rules[rules_number++] = *rule;
+	rules[rules_number++] = r;
 	return 0;
 }
 
@@ -67,6 +75,122 @@ int read_binfmt_rules_from_file(const char *filepath) {
 		if (sscanf(line, ":%255[^:]:%c:%zu:%255[^:]:%255[^:]:%255[^:]:", rule.name, &rule.type, &rule.offset, rule.magic, rule.mask, rule.interpreter) != 6) {
 			continue;
 		}
+		// Run escape sequences in magic, mask, and interpreter
+		int magic_len = 0;
+		int mask_len = 0;
+		int interp_len = 0;
+		char *ptr = rule.magic;
+		char *dst = rule.magic;
+		while (*ptr) {
+			if (*ptr == '\\') {
+				ptr++;
+				if (*ptr == 'n') {
+					*dst++ = '\n';
+					magic_len++;
+				} else if (*ptr == 't') {
+					*dst++ = '\t';
+					magic_len++;
+				} else if (*ptr == 'r') {
+					*dst++ = '\r';
+					magic_len++;
+				} else if (*ptr == '\\') {
+					*dst++ = '\\';
+					magic_len++;
+				} else if (*ptr == 'x') {
+					ptr++;
+					char hex[3] = {0};
+					if (isxdigit(ptr[0])) hex[0] = *ptr++;
+					if (isxdigit(ptr[0])) hex[1] = *ptr++;
+					*dst++ = (char)strtol(hex, NULL, 16);
+					magic_len++;
+					continue; // skip ptr++ at end of loop because we've already advanced
+				} else {
+					*dst++ = *ptr;
+					magic_len++;
+				}
+			} else {
+				*dst++ = *ptr;
+				magic_len++;
+			}
+			ptr++;
+		}
+		// Clean up the rest of the buffer
+		memset(dst, 0, PATH_MAX - magic_len);
+		ptr = rule.mask;
+		dst = rule.mask;
+		while (*ptr) {
+			if (*ptr == '\\') {
+				ptr++;
+				if (*ptr == 'n') {
+					*dst++ = '\n';
+					mask_len++;
+				} else if (*ptr == 't') {
+					*dst++ = '\t';
+					mask_len++;
+				} else if (*ptr == 'r') {
+					*dst++ = '\r';
+					mask_len++;
+				} else if (*ptr == '\\') {
+					*dst++ = '\\';
+					mask_len++;
+				} else if (*ptr == 'x') {
+					ptr++;
+					char hex[3] = {0};
+					if (isxdigit(ptr[0])) hex[0] = *ptr++;
+					if (isxdigit(ptr[0])) hex[1] = *ptr++;
+					*dst++ = (char)strtol(hex, NULL, 16);
+					mask_len++;
+					continue; // skip ptr++ at end of loop because we've already advanced
+				} else {
+					*dst++ = *ptr;
+					mask_len++;
+				}
+			} else {
+				*dst++ = *ptr;
+				mask_len++;
+			}
+			ptr++;
+		}
+		// Clean up the rest of the buffer
+		memset(dst, 0, PATH_MAX - mask_len);
+		ptr = rule.interpreter;
+		dst = rule.interpreter;
+		while (*ptr) {
+			if (*ptr == '\\') {
+				ptr++;
+				if (*ptr == 'n') {
+					*dst++ = '\n';
+					interp_len++;
+				} else if (*ptr == 't') {
+					*dst++ = '\t';
+					interp_len++;
+				} else if (*ptr == 'r') {
+					*dst++ = '\r';
+					interp_len++;
+				} else if (*ptr == '\\') {
+					*dst++ = '\\';
+					interp_len++;
+				} else if (*ptr == 'x') {
+					ptr++;
+					char hex[3] = {0};
+					if (isxdigit(ptr[0])) hex[0] = *ptr++;
+					if (isxdigit(ptr[0])) hex[1] = *ptr++;
+					*dst++ = (char)strtol(hex, NULL, 16);
+					interp_len++;
+					continue; // skip ptr++ at end of loop because we've already advanced
+				} else {
+					*dst++ = *ptr;
+					interp_len++;
+				}
+			} else {
+				*dst++ = *ptr;
+				interp_len++;
+			}
+			ptr++;
+		}
+		// Clean up the rest of the buffer
+		memset(dst, 0, PATH_MAX - interp_len);
+
 		// Register rule
 		if (register_binfmt(&rule) < 0) {
 			continue;
