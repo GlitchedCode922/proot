@@ -337,9 +337,8 @@ static int handle_option_p(Tracee *tracee, const Cli *cli UNUSED, const char *va
 }
 
 static int handle_option_binfmt_rules(Tracee *tracee UNUSED, const struct Cli *cli UNUSED, const char *value) {
-	(void)read_binfmt_rules_from_file(value);
 	atexit(clear_binfmt_rule_list);
-	return 0;
+	return read_binfmt_rules_from_file(value);
 }
 
 /**

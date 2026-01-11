@@ -3,7 +3,7 @@
 #include "execve/aoxp.h"
 #include "tracee/reg.h"
 #include "tracee/tracee.h"
-#include "cli/cli.h"
+#include "cli/note.h"
 
 #include <fcntl.h>
 #include <linux/limits.h>
@@ -64,16 +64,20 @@ int unregister_binfmt(const char *name) {
 int read_binfmt_rules_from_file(const char *filepath) {
 	FILE *file = fopen(filepath, "r");
 	if (!file) {
-		return -errno;
+		note(NULL, ERROR, SYSTEM, "Failed to open binfmt configuration file");
+		return -1;
 	}
 	// Read file line by line
 	char line[4096];
 	while (fgets(line, sizeof(line), file)) {
+		line[strcspn(line, "\n")] = 0; // Remove newline
 		BinfmtRule rule;
 		memset(&rule, 0, sizeof(BinfmtRule));
 		// Parse line (:name:type:offset:magic:mask:interpreter:)
-		if (sscanf(line, ":%255[^:]:%c:%zu:%255[^:]:%255[^:]:%255[^:]:", rule.name, &rule.type, &rule.offset, rule.magic, rule.mask, rule.interpreter) != 6) {
-			continue;
+		int l = 0;
+		if (sscanf(line, ":%255[^:]:%c:%zu:%255[^:]:%255[^:]:%255[^:]:%n", rule.name, &rule.type, &rule.offset, rule.magic, rule.mask, rule.interpreter, &l) != 6 || line[l] != '\0') {
+			note(NULL, ERROR, INTERNAL, "Failed to parse binfmt configuration line: %s", line);
+			return -1;
 		}
 		// Run escape sequences in magic, mask, and interpreter
 		int magic_len = 0;
@@ -192,8 +196,10 @@ int read_binfmt_rules_from_file(const char *filepath) {
 		memset(dst, 0, PATH_MAX - interp_len);
 
 		// Register rule
-		if (register_binfmt(&rule) < 0) {
-			continue;
+		int status = register_binfmt(&rule);
+		if (status < 0) {
+			note(NULL, ERROR, INTERNAL, "Failed to register binfmt rule: %s", strerror(-status));
+			return -1;
 		}
 	}
 	fclose(file);
